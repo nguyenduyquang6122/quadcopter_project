@@ -78,7 +78,7 @@ int16_t acc_z_average_short[26], acc_z_average_long[51];
 uint8_t acc_z_average_short_rotating_mem_location, acc_z_average_long_rotating_mem_location;
 int32_t acc_alt_integrated;
 
-//Compass variablesvariables
+// Biến cho cảm biến la bàn
 uint8_t compass_calibration_on, heading_lock;
 int16_t compass_x, compass_y, compass_z;
 int16_t compass_cal_values[6];
@@ -88,7 +88,7 @@ int16_t compass_offset_x, compass_offset_y, compass_offset_z;
 float course_a, course_b, course_c, base_course_mirrored, actual_course_mirrored;
 float course_lock_heading, heading_lock_course_deviation;
 
-//Pressure variables.
+// Biến cho cảm biến áp suất
 float pid_error_gain_altitude, pid_throttle_gain_altitude;
 unsigned int C[7];
 uint8_t barometer_counter, temperature_counter, average_temperature_mem_location;
@@ -97,7 +97,8 @@ uint32_t D1, D2, raw_pressure, raw_temperature, temp, raw_temperature_rotating_m
 float actual_pressure, actual_pressure_slow, actual_pressure_fast, actual_pressure_diff;
 float ground_pressure, altutude_hold_pressure;
 int64_t dT, dT_C5;
-//Altitude PID variables
+
+// Biến PID độ cao
 float pid_i_mem_altitude, pid_altitude_setpoint, pid_altitude_input, pid_output_altitude, pid_last_altitude_d_error;
 uint8_t parachute_rotating_mem_location;
 int32_t parachute_buffer[35], parachute_throttle;
@@ -167,7 +168,8 @@ void setup() {
   // 1260 / 1023 = 1.2317.
   // Biến battery_voltage là 1050 nếu điện áp pin là 10.5V.
   battery_voltage = (analogRead(0) + 65) * 1.2317;
-  Serial.print(battery_voltage); Serial.println("\t");
+  Serial.print("Current battery capacity: ")
+  Serial.print((float)battery_voltage/100); Serial.println("\t");
 
   // Trước khi bắt đầu, giá trị của gia tốc kế trung bình được nạp trươc vào các biến.
   for (start = 0; start <= 24; start++)acc_z_average_short[start] = acc_z;
@@ -202,13 +204,11 @@ void loop() {
   read_barometer();
   read_compass();
 
+  serial_monitor();
+
   gyro_roll_input = (gyro_roll_input * 0.8) + (((float)gyro_roll / 65.5) * 0.2);
   gyro_pitch_input = (gyro_pitch_input * 0.8) + (((float)gyro_pitch / 65.5) * 0.2);
   gyro_yaw_input = (gyro_yaw_input * 0.8) + (((float)gyro_yaw / 65.5) * 0.2);
-
-  // Serial.print(gyro_roll_input); Serial.print("\t");
-  // Serial.print(gyro_pitch_input); Serial.print("\t");
-  // Serial.print(gyro_yaw_input); Serial.println("\t");
 
   angle_pitch += (float)gyro_pitch * 0.0000611;
   angle_roll += (float)gyro_roll * 0.0000611;
@@ -229,15 +229,8 @@ void loop() {
     angle_roll_acc = asin((float)acc_y/acc_total_vector)* 57.296;
   }
 
-  // Serial.print((float)acc_x/acc_total_vector); Serial.print("\t");
-  // Serial.print((float)acc_y/acc_total_vector); Serial.println("\t");
-
   angle_pitch = angle_pitch * 0.9996 + angle_pitch_acc * 0.0004;
   angle_roll = angle_roll * 0.9996 + angle_roll_acc * 0.0004;
-
-  // Serial.print(angle_pitch); Serial.print(",");
-  // Serial.print(angle_roll); Serial.print(",");
-  // Serial.print(angle_yaw); Serial.println(",");
 
   pitch_level_adjust = angle_pitch * 15;
   roll_level_adjust = angle_roll * 15;
@@ -263,16 +256,9 @@ void loop() {
   battery_voltage = battery_voltage * 0.92 + (analogRead(0) + 65) * (0.08 * 1.2317);
   if(battery_voltage < 1000 && battery_voltage > 600 && error == 0) error = 1;
 
-  // Serial.print(receiver_input_channel_1); Serial.print("\t");
-  // Serial.print(receiver_input_channel_2); Serial.print("\t");
-  // Serial.print(receiver_input_channel_3); Serial.print("\t");
-  // Serial.print(receiver_input_channel_4); Serial.print("\t");
-  // Serial.print(receiver_input_channel_5); Serial.print("\t");
-  // Serial.print(receiver_input_channel_6); Serial.println("\t");
-
   start_stop_takeoff();
 
-   if(takeoff_detected == 1 && start == 2) {
+  if(takeoff_detected == 1 && start == 2) {
     throttle = receiver_input_channel_3 + takeoff_throttle;
     if (flight_mode >= 2){
       throttle = 1500 + takeoff_throttle + pid_output_altitude + manual_throttle;
@@ -309,11 +295,6 @@ void loop() {
     esc_3 = 1000;
     esc_4 = 1000;
   }
-
-  // Serial.print(esc_1);Serial.print(",");
-  // Serial.print(esc_2);Serial.print(",");
-  // Serial.print(esc_3);Serial.print(",");
-  // Serial.print(esc_4);Serial.println(",");
 
   while(micros() - loop_timer < 4000);
   loop_timer = micros();
@@ -401,6 +382,68 @@ ISR(PCINT0_vect){ //Khai báo ngắt RX
     last_channel_6 = 0; // Ghi nhớ trạng thái đầu vào hiện tại
     receiver_input_channel_6 = current_time - timer_6; 
   }
+}
+
+void calculate_pid(){
+
+  pid_roll_setpoint = 0;
+  
+  if(pid_roll_setpoint_base > 1512)pid_roll_setpoint = pid_roll_setpoint_base - 1512;
+  else if(pid_roll_setpoint_base < 1492)pid_roll_setpoint = pid_roll_setpoint_base - 1492;
+
+  pid_roll_setpoint -= roll_level_adjust;
+  pid_roll_setpoint /= 4.0;
+
+  pid_pitch_setpoint = 0;
+
+  if(pid_pitch_setpoint_base > 1512)pid_pitch_setpoint = pid_pitch_setpoint_base - 1512;
+  else if(pid_pitch_setpoint_base < 1492)pid_pitch_setpoint = pid_pitch_setpoint_base - 1492;
+
+  pid_pitch_setpoint -= pitch_level_adjust;
+  pid_pitch_setpoint /= 4.0;
+
+  pid_yaw_setpoint = 0;
+
+  if(receiver_input_channel_3 > 1050){
+    if(receiver_input_channel_4 > 1512)pid_yaw_setpoint = (receiver_input_channel_4 - 1512)/4.0;
+    else if(receiver_input_channel_4 < 1492)pid_yaw_setpoint = (receiver_input_channel_4 - 1492)/4.0;
+  }
+
+  // Tính toán Roll
+  pid_error_temp = gyro_roll_input - pid_roll_setpoint;
+  pid_i_mem_roll += pid_i_gain_roll * pid_error_temp;
+  if(pid_i_mem_roll > pid_max_roll)pid_i_mem_roll = pid_max_roll;
+  else if(pid_i_mem_roll < pid_max_roll * -1)pid_i_mem_roll = pid_max_roll * -1;
+
+  pid_output_roll = pid_p_gain_roll * pid_error_temp + pid_i_mem_roll + pid_d_gain_roll * (pid_error_temp - pid_last_roll_d_error);
+  if(pid_output_roll > pid_max_roll)pid_output_roll = pid_max_roll;
+  else if(pid_output_roll < pid_max_roll * -1)pid_output_roll = pid_max_roll * -1;
+
+  pid_last_roll_d_error = pid_error_temp;
+
+  // Tính toán Pitch
+  pid_error_temp = gyro_pitch_input - pid_pitch_setpoint;
+  pid_i_mem_pitch += pid_i_gain_pitch * pid_error_temp;
+  if(pid_i_mem_pitch > pid_max_pitch)pid_i_mem_pitch = pid_max_pitch;
+  else if(pid_i_mem_pitch < pid_max_pitch * -1)pid_i_mem_pitch = pid_max_pitch * -1;
+
+  pid_output_pitch = pid_p_gain_pitch * pid_error_temp + pid_i_mem_pitch + pid_d_gain_pitch * (pid_error_temp - pid_last_pitch_d_error);
+  if(pid_output_pitch > pid_max_pitch)pid_output_pitch = pid_max_pitch;
+  else if(pid_output_pitch < pid_max_pitch * -1)pid_output_pitch = pid_max_pitch * -1;
+
+  pid_last_pitch_d_error = pid_error_temp;
+
+  // Tính toán Yaw
+  pid_error_temp = gyro_yaw_input - pid_yaw_setpoint;
+  pid_i_mem_yaw += pid_i_gain_yaw * pid_error_temp;
+  if(pid_i_mem_yaw > pid_max_yaw)pid_i_mem_yaw = pid_max_yaw;
+  else if(pid_i_mem_yaw < pid_max_yaw * -1)pid_i_mem_yaw = pid_max_yaw * -1;
+
+  pid_output_yaw = pid_p_gain_yaw * pid_error_temp + pid_i_mem_yaw + pid_d_gain_yaw * (pid_error_temp - pid_last_yaw_d_error);
+  if(pid_output_yaw > pid_max_yaw)pid_output_yaw = pid_max_yaw;
+  else if(pid_output_yaw < pid_max_yaw * -1)pid_output_yaw = pid_max_yaw * -1;
+
+  pid_last_yaw_d_error = pid_error_temp;
 }
 
 void gyro_signalen(){
@@ -543,74 +586,10 @@ void gyro_setup(){
 
   acc_x_cal  = EEPROM.read(13) << 8 | EEPROM.read(12);
   acc_y_cal  = EEPROM.read(15) << 8 | EEPROM.read(14);
-  Serial.print(acc_x_cal); Serial.print("\t");
-  Serial.print(acc_y_cal); Serial.println("\t");
+  // Serial.print(acc_x_cal); Serial.print("\t");
+  // Serial.print(acc_y_cal); Serial.println("\t");
 }
 
-void calculate_pid(){
-
-  pid_roll_setpoint = 0;
-  
-  if(pid_roll_setpoint_base > 1512)pid_roll_setpoint = pid_roll_setpoint_base - 1512;
-  else if(pid_roll_setpoint_base < 1492)pid_roll_setpoint = pid_roll_setpoint_base - 1492;
-
-  pid_roll_setpoint -= roll_level_adjust;
-  pid_roll_setpoint /= 4.0;
-
-  pid_pitch_setpoint = 0;
-
-  if(pid_pitch_setpoint_base > 1512)pid_pitch_setpoint = pid_pitch_setpoint_base - 1512;
-  else if(pid_pitch_setpoint_base < 1492)pid_pitch_setpoint = pid_pitch_setpoint_base - 1492;
-
-  pid_pitch_setpoint -= pitch_level_adjust;
-  pid_pitch_setpoint /= 4.0;
-
-  pid_yaw_setpoint = 0;
-
-  if(receiver_input_channel_3 > 1050){
-    if(receiver_input_channel_4 > 1512)pid_yaw_setpoint = (receiver_input_channel_4 - 1512)/4.0;
-    else if(receiver_input_channel_4 < 1492)pid_yaw_setpoint = (receiver_input_channel_4 - 1492)/4.0;
-  }
-
-  // Serial.print(pid_roll_setpoint); Serial.print("\t");
-  // Serial.print(pid_pitch_setpoint); Serial.println("\t");
-
-  // Tính toán Roll
-  pid_error_temp = gyro_roll_input - pid_roll_setpoint;
-  pid_i_mem_roll += pid_i_gain_roll * pid_error_temp;
-  if(pid_i_mem_roll > pid_max_roll)pid_i_mem_roll = pid_max_roll;
-  else if(pid_i_mem_roll < pid_max_roll * -1)pid_i_mem_roll = pid_max_roll * -1;
-
-  pid_output_roll = pid_p_gain_roll * pid_error_temp + pid_i_mem_roll + pid_d_gain_roll * (pid_error_temp - pid_last_roll_d_error);
-  if(pid_output_roll > pid_max_roll)pid_output_roll = pid_max_roll;
-  else if(pid_output_roll < pid_max_roll * -1)pid_output_roll = pid_max_roll * -1;
-
-  pid_last_roll_d_error = pid_error_temp;
-
-  // Tính toán Pitch
-  pid_error_temp = gyro_pitch_input - pid_pitch_setpoint;
-  pid_i_mem_pitch += pid_i_gain_pitch * pid_error_temp;
-  if(pid_i_mem_pitch > pid_max_pitch)pid_i_mem_pitch = pid_max_pitch;
-  else if(pid_i_mem_pitch < pid_max_pitch * -1)pid_i_mem_pitch = pid_max_pitch * -1;
-
-  pid_output_pitch = pid_p_gain_pitch * pid_error_temp + pid_i_mem_pitch + pid_d_gain_pitch * (pid_error_temp - pid_last_pitch_d_error);
-  if(pid_output_pitch > pid_max_pitch)pid_output_pitch = pid_max_pitch;
-  else if(pid_output_pitch < pid_max_pitch * -1)pid_output_pitch = pid_max_pitch * -1;
-
-  pid_last_pitch_d_error = pid_error_temp;
-
-  // Tính toán Yaw
-  pid_error_temp = gyro_yaw_input - pid_yaw_setpoint;
-  pid_i_mem_yaw += pid_i_gain_yaw * pid_error_temp;
-  if(pid_i_mem_yaw > pid_max_yaw)pid_i_mem_yaw = pid_max_yaw;
-  else if(pid_i_mem_yaw < pid_max_yaw * -1)pid_i_mem_yaw = pid_max_yaw * -1;
-
-  pid_output_yaw = pid_p_gain_yaw * pid_error_temp + pid_i_mem_yaw + pid_d_gain_yaw * (pid_error_temp - pid_last_yaw_d_error);
-  if(pid_output_yaw > pid_max_yaw)pid_output_yaw = pid_max_yaw;
-  else if(pid_output_yaw < pid_max_yaw * -1)pid_output_yaw = pid_max_yaw * -1;
-
-  pid_last_yaw_d_error = pid_error_temp;
-}
 
 void MS5611_calibration(void){
   Wire.beginTransmission(MS5611_address);
@@ -640,10 +619,6 @@ void MS5611_calibration(void){
 }
 
 void read_barometer(void) {
-  // Serial.print(raw_pressure); Serial.print("\t");
-  // Serial.print(raw_temperature); Serial.println("\t");
-  // Serial.print(100810); Serial.print("\t");
-  // Serial.print(actual_pressure); Serial.println("\t");
   barometer_counter ++;
 
   // Mỗi lần hàm này được gọi, biến barometer_counter sẽ tăng lên. Bằng cách này, một hành động cụ thể
@@ -719,8 +694,8 @@ void read_barometer(void) {
   }
 
   if (barometer_counter == 3) {
-
     barometer_counter = 0;
+
     // Trong phần sau, bộ đệm quay được sử dụng để tính toán sự thay đổi dài hạn giữa các phép đo áp suất khác nhau..
     // Tổng giá trị này có thể được sử dụng để phát hiện hướng (lên/xuống) và tốc độ của quadcopter và chức năng như bộ điều khiển D của bộ điều khiển PID tổng.
     if (manual_altitude_change == 1)pressure_parachute_previous = actual_pressure * 10;
@@ -809,7 +784,7 @@ void setup_compass(void){
   for (error = 0; error < 6; error ++){
     compass_cal_values[error] = EEPROM.read(addrEEPROM + 1) << 8 | EEPROM.read(addrEEPROM);
     addrEEPROM = addrEEPROM + 2;
-    Serial.println(compass_cal_values[error]);
+    // Serial.println(compass_cal_values[error]);
   }
   addrEEPROM = 0;
   error = 0;
@@ -824,9 +799,6 @@ void setup_compass(void){
 }
 
 void read_compass(void) {
-  // Serial.print(compass_x); Serial.print("\t");
-  // Serial.print(compass_y); Serial.print("\t");
-  // Serial.print(compass_z); Serial.println("\t");
   Wire.beginTransmission(compass_address);
   Wire.write(0x03);
   Wire.endTransmission();
@@ -900,8 +872,6 @@ void calibrate_compass(void){
 }
 
 void vertical_acceleration_calculations(void) {
-  // Serial.print(acc_total_vector); Serial.print("\t");
-  // Serial.print(acc_z_average_short_total/25); Serial.println("\t");
   acc_z_average_short_rotating_mem_location++;
   if (acc_z_average_short_rotating_mem_location == 25)acc_z_average_short_rotating_mem_location = 0;
 
@@ -1067,4 +1037,48 @@ void flight_mode_signal(void) {
       flight_mode_led = 0;                                                                 //Đặt cờ LED để biết LED đang tăt.
     }
   }
+}
+
+void serial_monitor(void){
+  // Serial.print(gyro_roll_input); Serial.print("\t");
+  // Serial.print(gyro_pitch_input); Serial.print("\t");
+  // Serial.print(gyro_yaw_input); Serial.println("\t");
+
+  // Serial.print(acc_x); Serial.print("\t");
+  // Serial.print(acc_y); Serial.print("\t");
+  // Serial.print(acc_z); Serial.println("\t");
+  
+  // Serial.print(acc_total_vector); Serial.print("\t");
+  // Serial.print(acc_z_average_short_total/25); Serial.println("\t");
+
+  // Serial.print((float)acc_x/acc_total_vector); Serial.print("\t");
+  // Serial.print((float)acc_y/acc_total_vector); Serial.println("\t");
+
+  // Serial.print(angle_pitch); Serial.print(",");
+  // Serial.print(angle_roll); Serial.print(",");
+  // Serial.print(angle_yaw); Serial.println(",");
+
+  // Serial.print(receiver_input_channel_1); Serial.print("\t");
+  // Serial.print(receiver_input_channel_2); Serial.print("\t");
+  // Serial.print(receiver_input_channel_3); Serial.print("\t");
+  // Serial.print(receiver_input_channel_4); Serial.print("\t");
+  // Serial.print(receiver_input_channel_5); Serial.print("\t");
+  // Serial.print(receiver_input_channel_6); Serial.println("\t");
+
+  // Serial.print(esc_1);Serial.print(",");
+  // Serial.print(esc_2);Serial.print(",");
+  // Serial.print(esc_3);Serial.print(",");
+  // Serial.print(esc_4);Serial.println(",");
+
+  // Serial.print(pid_roll_setpoint); Serial.print("\t");
+  // Serial.print(pid_pitch_setpoint); Serial.println("\t");
+
+  // Serial.print(raw_pressure); Serial.print("\t");
+  // Serial.print(raw_temperature); Serial.println("\t");
+  // Serial.print(100810); Serial.print("\t");
+  // Serial.print(actual_pressure); Serial.println("\t");
+
+  // Serial.print(compass_x); Serial.print("\t");
+  // Serial.print(compass_y); Serial.print("\t");
+  // Serial.print(compass_z); Serial.println("\t");
 }
