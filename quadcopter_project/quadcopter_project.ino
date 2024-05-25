@@ -168,8 +168,8 @@ void setup() {
   // 1260 / 1023 = 1.2317.
   // Biến battery_voltage là 1050 nếu điện áp pin là 10.5V.
   battery_voltage = (analogRead(0) + 65) * 1.2317;
-  Serial.print("Current battery capacity: ")
-  Serial.print((float)battery_voltage/100); Serial.println("\t");
+  // Serial.print("Current battery capacity: ");
+  // Serial.print((float)battery_voltage/100); Serial.println("\t");
 
   // Trước khi bắt đầu, giá trị của gia tốc kế trung bình được nạp trươc vào các biến.
   for (start = 0; start <= 24; start++)acc_z_average_short[start] = acc_z;
@@ -204,7 +204,7 @@ void loop() {
   read_barometer();
   read_compass();
 
-  serial_monitor();
+  // serial_monitor();
 
   gyro_roll_input = (gyro_roll_input * 0.8) + (((float)gyro_roll / 65.5) * 0.2);
   gyro_pitch_input = (gyro_pitch_input * 0.8) + (((float)gyro_pitch / 65.5) * 0.2);
@@ -296,6 +296,7 @@ void loop() {
     esc_4 = 1000;
   }
 
+  if (micros() - loop_timer > 4050)error = 2;
   while(micros() - loop_timer < 4000);
   loop_timer = micros();
 
@@ -533,8 +534,10 @@ void calibrate_level(void) {
 void calibrate_gyro(void){
   Serial.print("Calibrating gyro");
   for (cal_int = 0; cal_int < 2000 ; cal_int ++){
-    if(cal_int % 15 == 0)digitalWrite(A2, !digitalRead(A2));
-    if(cal_int % 125 == 0)Serial.print(".");
+    if(cal_int % 125 == 0){
+      digitalWrite(A2, !digitalRead(A2));
+      Serial.print(".");
+    }
     gyro_signalen();
     gyro_roll_cal += gyro_roll;
     gyro_pitch_cal += gyro_pitch;
@@ -926,7 +929,7 @@ void start_stop_takeoff(void) {
       pid_output_yaw = 0;
     }
     else if (manual_takeoff_throttle) {
-      error = 5;
+      error = 4;
       takeoff_throttle = 0;
       start = 0;
     }
@@ -939,7 +942,7 @@ void start_stop_takeoff(void) {
 
   if (takeoff_detected == 0 && start == 2) {
     if (receiver_input_channel_3 > 1480 && throttle < 1750) throttle++;
-    if (throttle == 1750)error = 6;
+    if (throttle == 1750)error = 5;
     if (receiver_input_channel_3 <= 1480) {
       if (throttle > motor_idle_speed)throttle--;
       // Đặt lại điều khiển PID để cất cánh suôn sẻ.
@@ -960,7 +963,7 @@ void start_stop_takeoff(void) {
       pid_altitude_setpoint = ground_pressure - 22;
       if (throttle > 1400 && throttle < 1700) takeoff_throttle = throttle - 1530;
       else {
-        error = 7;
+        error = 6;
         takeoff_throttle = 0;
       }
     }
@@ -1047,7 +1050,7 @@ void serial_monitor(void){
   // Serial.print(acc_x); Serial.print("\t");
   // Serial.print(acc_y); Serial.print("\t");
   // Serial.print(acc_z); Serial.println("\t");
-  
+
   // Serial.print(acc_total_vector); Serial.print("\t");
   // Serial.print(acc_z_average_short_total/25); Serial.println("\t");
 
@@ -1081,4 +1084,8 @@ void serial_monitor(void){
   // Serial.print(compass_x); Serial.print("\t");
   // Serial.print(compass_y); Serial.print("\t");
   // Serial.print(compass_z); Serial.println("\t");
+
+  Serial.print(loop_timer); Serial.print("\t");
+  Serial.print(micros()); Serial.print("\t");
+  Serial.print(micros() - loop_timer); Serial.println("\t");
 }
