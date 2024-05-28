@@ -31,11 +31,12 @@ int pid_max_altitude = 400;
 int16_t manual_takeoff_throttle = 1500;    // Nhập điểm cất cánh thủ công khi không phát hiện cất cánh tự động (giữa 1400 và 1600).
 int16_t motor_idle_speed = 1100;           // Nhập xung ga tối thiếu của động cơ khi chúng không tải (giữa 1000 và 1200).
 
-float declination = 0.0;                   // Đặt độ xích vĩ giữa từ trường và phía bắc địa lý.
+float declination = -1.56;                   // Đặt độ xích vĩ giữa từ trường và phía bắc địa lý.
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Khai báo các biến toàn cục
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+unsigned long lastSensorReadTime = 0;
 byte last_channel_1, last_channel_2, last_channel_3, last_channel_4, last_channel_5, last_channel_6;
 volatile int receiver_input_channel_1, receiver_input_channel_2, receiver_input_channel_3, receiver_input_channel_4, receiver_input_channel_5, receiver_input_channel_6;
 volatile int pid_roll_setpoint_base, pid_pitch_setpoint_base;
@@ -106,6 +107,7 @@ float pressure_parachute_previous;
 int32_t pressure_rotating_mem[50], pressure_total_avarage;
 uint8_t pressure_rotating_mem_location;
 float pressure_rotating_mem_actual;
+
 
 void setup() {
   Serial.begin(57600);
@@ -185,6 +187,11 @@ void setup() {
 }
 
 void loop() {
+  unsigned long currentMicros = micros();
+  if(currentMicros - lastSensorReadTime >= 13334){
+    read_compass();
+    lastSensorReadTime = currentMicros;
+  }
   if(start == 0){
     // Cần điều khiển tất cả phía trên bên phải: hiệu chỉnh cân bằng
     if(receiver_input_channel_1 > 1900 && receiver_input_channel_2 < 1100 && receiver_input_channel_3 > 1900 && receiver_input_channel_4 > 1900) calibrate_level();
@@ -202,7 +209,7 @@ void loop() {
   error_signal();
   gyro_signalen();
   read_barometer();
-  read_compass();
+  // read_compass();
 
   // serial_monitor();
 
@@ -210,12 +217,14 @@ void loop() {
   gyro_pitch_input = (gyro_pitch_input * 0.8) + (((float)gyro_pitch / 65.5) * 0.2);
   gyro_yaw_input = (gyro_yaw_input * 0.8) + (((float)gyro_yaw / 65.5) * 0.2);
 
+  // 0.0000611 = (1/250)/65.5
   angle_pitch += (float)gyro_pitch * 0.0000611;
   angle_roll += (float)gyro_roll * 0.0000611;
   angle_yaw += (float)gyro_yaw * 0.0000611;
   if (angle_yaw < 0) angle_yaw += 360;                           // Nếu angle_yaw < 0, 360 sẽ được thêm vào để giữ nó trong phạm vi từ 0 đến 360.
   else if (angle_yaw >= 360) angle_yaw -= 360;                   // Nếu angle_yaw > 360, 360 sẽ được bớt đi để giữ nó trong phạm vi từ 0 đến 360.
 
+  //0.000001066 = 0.0000611 * (3.142(PI) / 180degr)
   angle_pitch -= angle_roll * sin((float)gyro_yaw * 0.000001066);
   angle_roll += angle_pitch * sin((float)gyro_yaw * 0.000001066);
 
@@ -296,7 +305,8 @@ void loop() {
     esc_4 = 1000;
   }
 
-  if (micros() - loop_timer > 4050)error = 2;
+  // if (micros() - loop_timer > 4050)error = 2;
+  // Serial.print(micros() - loop_timer); Serial.println("\t");
   while(micros() - loop_timer < 4000);
   loop_timer = micros();
 
@@ -474,10 +484,6 @@ void gyro_signalen(){
     acc_x -= acc_x_cal;
     acc_y -= acc_y_cal;
   }
-
-  // Serial.print(acc_x); Serial.print("\t");
-  // Serial.print(acc_y); Serial.print("\t");
-  // Serial.print(acc_z); Serial.println("\t");
 }
 
 void calibrate_level(void) {
@@ -534,7 +540,7 @@ void calibrate_level(void) {
 void calibrate_gyro(void){
   Serial.print("Calibrating gyro");
   for (cal_int = 0; cal_int < 2000 ; cal_int ++){
-    if(cal_int % 125 == 0){
+    if(cal_int % 25 == 0){
       digitalWrite(A2, !digitalRead(A2));
       Serial.print(".");
     }
@@ -763,6 +769,7 @@ void read_barometer(void) {
   }
 }
 
+// Sau đây tính toán sự khác biệt nhỏ nhất giữa hai giá trị tiêu đề.
 float course_deviation(float course_b, float course_c) {
   course_a = course_b - course_c;
   if (course_a < -180 || course_a > 180) {
@@ -794,11 +801,11 @@ void setup_compass(void){
 
   // Tính toán giá trị hiệu chỉnh và giá trị tỷ lệ.
   compass_scale_x = ((float)compass_cal_values[3] - compass_cal_values[2]) / (compass_cal_values[1] - compass_cal_values[0]);
-  compass_scale_z = ((float)compass_cal_values[3] - compass_cal_values[2]) / (compass_cal_values[5] - compass_cal_values[4]);
+  compass_scale_y = ((float)compass_cal_values[1] - compass_cal_values[0]) / (compass_cal_values[3] - compass_cal_values[2]);
 
-  compass_offset_y = (compass_cal_values[3] - compass_cal_values[2]) / 2 - compass_cal_values[3];
   compass_offset_x = (((float)compass_cal_values[1] - compass_cal_values[0]) / 2 - compass_cal_values[1]) * compass_scale_x;
-  compass_offset_z = (((float)compass_cal_values[5] - compass_cal_values[4]) / 2 - compass_cal_values[5]) * compass_scale_z;
+  compass_offset_y = (((float)compass_cal_values[3] - compass_cal_values[2]) / 2 - compass_cal_values[3]) * compass_scale_y;
+  compass_offset_z = (compass_cal_values[5] - compass_cal_values[4]) / 2 - compass_cal_values[5];
 }
 
 void read_compass(void) {
@@ -807,17 +814,16 @@ void read_compass(void) {
   Wire.endTransmission();
 
   Wire.requestFrom(compass_address, 6);
-  compass_x = Wire.read() << 8 | Wire.read();
-  compass_z = Wire.read() << 8 | Wire.read();
   compass_y = Wire.read() << 8 | Wire.read();
-  compass_y *= -1;
+  compass_z = Wire.read() << 8 | Wire.read();
+  compass_x = Wire.read() << 8 | Wire.read();
 
   if (compass_calibration_on == 0) {
   compass_x += compass_offset_x;
   compass_x *= compass_scale_x;
-  compass_z += compass_offset_z;
-  compass_z *= compass_scale_z;
   compass_y += compass_offset_y;
+  compass_y *= compass_scale_y;
+  compass_z += compass_offset_z;
   }
 
   // Các giá trị la bàn thay đổi khi góc cuộn và góc nghiêng của quadcopter thay đổi. Đó là lý do mà giá trị x, y cần tính toán cho vị trí nằm ngang ảo
@@ -1057,9 +1063,9 @@ void serial_monitor(void){
   // Serial.print((float)acc_x/acc_total_vector); Serial.print("\t");
   // Serial.print((float)acc_y/acc_total_vector); Serial.println("\t");
 
-  // Serial.print(angle_pitch); Serial.print(",");
-  // Serial.print(angle_roll); Serial.print(",");
-  // Serial.print(angle_yaw); Serial.println(",");
+  Serial.print(angle_pitch); Serial.print(",");
+  Serial.print(angle_roll); Serial.print(",");
+  Serial.print(angle_yaw); Serial.println(",");
 
   // Serial.print(receiver_input_channel_1); Serial.print("\t");
   // Serial.print(receiver_input_channel_2); Serial.print("\t");
@@ -1085,7 +1091,7 @@ void serial_monitor(void){
   // Serial.print(compass_y); Serial.print("\t");
   // Serial.print(compass_z); Serial.println("\t");
 
-  Serial.print(loop_timer); Serial.print("\t");
-  Serial.print(micros()); Serial.print("\t");
-  Serial.print(micros() - loop_timer); Serial.println("\t");
+  // Serial.print(loop_timer); Serial.print("\t");
+  // Serial.print(micros()); Serial.print("\t");
+  // Serial.print(micros() - loop_timer); Serial.println("\t");
 }
